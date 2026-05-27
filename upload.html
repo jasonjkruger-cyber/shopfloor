@@ -247,6 +247,48 @@
     transition: width 0.3s;
     width: 0%;
   }
+
+  .preview-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
+  .preview-thumb {
+    position: relative;
+    aspect-ratio: 1;
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--surface2);
+  }
+
+  .preview-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .preview-thumb .remove-btn {
+    position: absolute;
+    top: 4px; right: 4px;
+    width: 22px; height: 22px;
+    background: rgba(0,0,0,0.7);
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .preview-thumb .remove-btn svg {
+    width: 12px; height: 12px;
+    stroke: #fff; fill: none;
+    stroke-width: 2; stroke-linecap: round;
+  }
 </style>
 </head>
 <body>
@@ -254,45 +296,40 @@
 <div class="logo">Shop Floor <span>●</span> Photo Board</div>
 
 <div id="mainForm">
-  <h1>Post a photo</h1>
-  <p class="subtitle">Takes 5 seconds. No login needed.</p>
+  <h1>Post photos</h1>
+  <p class="subtitle">Select one or more — no login needed.</p>
 
   <div class="upload-zone" id="uploadZone">
-    <input type="file" accept="image/*" id="fileInput" onchange="handleFile(this)">
+    <input type="file" accept="image/*" multiple id="fileInput" onchange="handleFiles(this)">
     <div class="upload-icon">
       <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
     </div>
-    <p>Tap to take or choose a photo</p>
-    <small>JPG · PNG · HEIC</small>
+    <p>Tap to choose photos</p>
+    <small>Select multiple at once · JPG · PNG · HEIC</small>
   </div>
 
-  <div class="preview-wrap" id="previewWrap">
-    <img id="previewImg" alt="Preview">
-    <button class="preview-clear" onclick="clearPhoto()" aria-label="Remove photo">
-      <svg viewBox="0 0 16 16"><line x1="3" y1="3" x2="13" y2="13"/><line x1="13" y1="3" x2="3" y2="13"/></svg>
-    </button>
-  </div>
+  <div class="preview-grid" id="previewGrid"></div>
 
-  <label class="caption-label" for="caption">Caption (optional)</label>
+  <label class="caption-label" for="caption">Caption for all photos (optional)</label>
   <textarea id="caption" rows="2" placeholder="e.g. Line 3 setup complete, Station 7 issue..."></textarea>
 
-  <button class="submit-btn" id="submitBtn" onclick="uploadPhoto()" disabled>
+  <button class="submit-btn" id="submitBtn" onclick="uploadAllPhotos()" disabled>
     <svg viewBox="0 0 24 24"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
-    Post to display
+    <span id="submitLabel">Post to display</span>
   </button>
 </div>
 
 <div class="state-uploading" id="stateUploading">
   <div class="spinner"></div>
   <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
-  <p>Uploading your photo…</p>
+  <p id="uploadingMsg">Uploading photos…</p>
 </div>
 
 <div class="state-success" id="stateSuccess">
   <div class="big-check">✅</div>
   <h2>Posted!</h2>
-  <p>Your photo is now live on the display.</p>
-  <button class="upload-again" onclick="resetForm()">Post another photo</button>
+  <p id="successMsg">Your photos are now live on the display.</p>
+  <button class="upload-again" onclick="resetForm()">Post more photos</button>
 </div>
 
 <div class="state-error" id="stateError">
@@ -306,63 +343,103 @@
   const UPLOAD_PRESET = 'shopfloor_upload';  // Replace with your unsigned upload preset name
   // ─────────────────────────────────────────────────────────────
 
-  let selectedFile = null;
+  let selectedFiles = [];
 
-  function handleFile(input) {
-    const file = input.files[0];
-    if (!file) return;
-    selectedFile = file;
-    const reader = new FileReader();
-    reader.onload = e => {
-      document.getElementById('previewImg').src = e.target.result;
-      document.getElementById('previewWrap').style.display = 'block';
-      document.getElementById('uploadZone').style.display = 'none';
-      document.getElementById('submitBtn').disabled = false;
-    };
-    reader.readAsDataURL(file);
+  function handleFiles(input) {
+    const files = Array.from(input.files);
+    if (!files.length) return;
+    selectedFiles = selectedFiles.concat(files);
+    renderPreviews();
+    document.getElementById('uploadZone').style.display = selectedFiles.length ? 'none' : 'block';
+    document.getElementById('submitBtn').disabled = false;
+    updateSubmitLabel();
   }
 
-  function clearPhoto() {
-    selectedFile = null;
-    document.getElementById('previewWrap').style.display = 'none';
-    document.getElementById('uploadZone').style.display = 'block';
-    document.getElementById('submitBtn').disabled = true;
-    document.getElementById('fileInput').value = '';
+  function renderPreviews() {
+    const grid = document.getElementById('previewGrid');
+    grid.innerHTML = '';
+    selectedFiles.forEach((file, i) => {
+      const thumb = document.createElement('div');
+      thumb.className = 'preview-thumb';
+      const img = document.createElement('img');
+      img.alt = 'Preview';
+      const reader = new FileReader();
+      reader.onload = e => { img.src = e.target.result; };
+      reader.readAsDataURL(file);
+      const btn = document.createElement('button');
+      btn.className = 'remove-btn';
+      btn.innerHTML = '<svg viewBox="0 0 12 12"><line x1="2" y1="2" x2="10" y2="10"/><line x1="10" y1="2" x2="2" y2="10"/></svg>';
+      btn.onclick = () => removeFile(i);
+      thumb.appendChild(img);
+      thumb.appendChild(btn);
+      grid.appendChild(thumb);
+    });
+    // Show add more button if files selected
+    if (selectedFiles.length > 0) {
+      const addMore = document.createElement('div');
+      addMore.className = 'preview-thumb';
+      addMore.style.cssText = 'display:flex;align-items:center;justify-content:center;cursor:pointer;border:1.5px dashed rgba(255,255,255,0.2);background:transparent;';
+      addMore.innerHTML = '<svg viewBox="0 0 24 24" style="width:28px;height:28px;stroke:#888;fill:none;stroke-width:1.8;stroke-linecap:round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>';
+      addMore.onclick = () => document.getElementById('fileInput').click();
+      grid.appendChild(addMore);
+    }
   }
 
-  async function uploadPhoto() {
-    if (!selectedFile) return;
+  function removeFile(index) {
+    selectedFiles.splice(index, 1);
+    renderPreviews();
+    if (selectedFiles.length === 0) {
+      document.getElementById('uploadZone').style.display = 'block';
+      document.getElementById('submitBtn').disabled = true;
+      document.getElementById('fileInput').value = '';
+    }
+    updateSubmitLabel();
+  }
 
+  function updateSubmitLabel() {
+    const n = selectedFiles.length;
+    document.getElementById('submitLabel').textContent = n > 1 ? `Post ${n} photos to display` : 'Post to display';
+  }
+
+  async function uploadAllPhotos() {
+    if (!selectedFiles.length) return;
     const caption = document.getElementById('caption').value.trim();
     const timestamp = new Date().toISOString();
+    const total = selectedFiles.length;
+    let done = 0;
+    let failed = 0;
 
     showState('uploading');
-
-    const formData = new FormData();
-    formData.append('file', selectedFile);
-    formData.append('upload_preset', UPLOAD_PRESET);
-    formData.append('context', `caption=${caption || 'Shop floor photo'}|timestamp=${timestamp}`);
-    formData.append('tags', 'shopfloor');
-
+    document.getElementById('uploadingMsg').textContent = `Uploading 1 of ${total}…`;
     const fill = document.getElementById('progressFill');
-    let prog = 10;
-    const interval = setInterval(() => { prog = Math.min(prog + 8, 85); fill.style.width = prog + '%'; }, 200);
+    fill.style.width = '0%';
 
-    try {
-      const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`, {
-        method: 'POST',
-        body: formData
-      });
+    for (const file of selectedFiles) {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('upload_preset', UPLOAD_PRESET);
+      formData.append('context', `caption=${caption || 'Shop floor photo'}|timestamp=${timestamp}`);
+      formData.append('tags', 'shopfloor');
+      try {
+        const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`, {
+          method: 'POST', body: formData
+        });
+        if (!res.ok) failed++;
+      } catch { failed++; }
+      done++;
+      fill.style.width = Math.round((done / total) * 100) + '%';
+      document.getElementById('uploadingMsg').textContent = done < total ? `Uploading ${done + 1} of ${total}…` : 'Finishing up…';
+    }
 
-      clearInterval(interval);
-      fill.style.width = '100%';
-
-      if (!res.ok) throw new Error('Upload failed');
-      showState('success');
-    } catch (err) {
-      clearInterval(interval);
-      document.getElementById('errorMsg').textContent = 'Upload failed. Check your connection and try again.';
+    if (failed === total) {
+      document.getElementById('errorMsg').textContent = 'All uploads failed. Check your connection and try again.';
       showState('error');
+    } else {
+      const n = total - failed;
+      document.getElementById('successMsg').textContent = failed > 0
+        ? `${n} of ${total} photos posted. ${failed} failed.`
+        : n === 1 ? 'Your photo is now live on the display.' : `All ${n} photos are now live on the display.`;
+      showState('success');
     }
   }
 
@@ -376,8 +453,12 @@
   function showMain() { showState('main'); }
 
   function resetForm() {
-    clearPhoto();
+    selectedFiles = [];
+    document.getElementById('previewGrid').innerHTML = '';
+    document.getElementById('uploadZone').style.display = 'block';
     document.getElementById('caption').value = '';
+    document.getElementById('submitBtn').disabled = true;
+    document.getElementById('fileInput').value = '';
     showState('main');
   }
 </script>
